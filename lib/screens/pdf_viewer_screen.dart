@@ -29,6 +29,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   bool _appBarVisible = true;
   Timer? _hideTimer;
   final PdfViewerController _pdfController = PdfViewerController();
+  bool _didInitialZoom = false;
   static const double _swipeVelocity = 350.0;
 
   @override
@@ -66,7 +67,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     if (newIndex < 0 || newIndex >= widget.navigationList.length) return;
     if (newIndex == _index) return;
     final newPath = widget.navigationList[newIndex];
-    setState(() => _index = newIndex);
+    setState(() {
+      _index = newIndex;
+      _didInitialZoom = false;
+    });
     await widget.onFileChanged?.call(newPath);
   }
 
@@ -84,6 +88,44 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   bool get _hasPrev => _index > 0;
   bool get _hasNext => _index < widget.navigationList.length - 1;
   String get _currentPath => widget.navigationList[_index];
+
+  /// Ustawia zoom na fit-height * 1.05 i pozycje na LEWY GORNY rog strony.
+  Future<void> _applyInitialZoom() async {
+    if (_didInitialZoom) return;
+    // Poczekaj az pdfrx zaladuje dokument
+    for (var i = 0; i < 40; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!mounted) return;
+      try {
+        final ctrl = _pdfController;
+        if (!ctrl.isReady) continue;
+
+        // Macierz dla strony 1 z anchorem na gorze-lewo
+        final baseMatrix = ctrl.calcMatrixFitHeightForPage(pageNumber: 1);
+        if (baseMatrix == null) continue;
+
+        // Wyciagnij zoom (skala Z) z macierzy
+        final baseZoom = baseMatrix.getMaxScaleOnAxis();
+        // Dodaj 5%
+        final newZoom = baseZoom * 1.05;
+
+        // Ustaw macierz: zoom * 1.05, pozycja na (0,0) = lewy gorny ekranu
+        final m = Matrix4.identity()
+          ..setEntry(0, 0, newZoom)
+          ..setEntry(1, 1, newZoom)
+          ..setEntry(2, 2, newZoom)
+          ..setEntry(0, 3, 0.0)  // dx = 0 → lewa krawedz strony = lewa krawedz ekranu
+          ..setEntry(1, 3, 0.0); // dy = 0 → gora strony = gora ekranu
+
+        ctrl.value = ctrl.makeMatrixInSafeRange(m);
+        _didInitialZoom = true;
+        print('ZOOM: base=$baseZoom, new=$newZoom');
+        return;
+      } catch (e) {
+        print('ZOOM blad: $e');
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -202,14 +244,26 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                         _currentPath,
                         key: ValueKey('pdf_$_index'),
                         controller: _pdfController,
+                        params: PdfViewerParams(
+                          margin: 0,
+                          maxScale: 8.0,
+                          onViewerReady: (doc, ctrl) {
+                            _applyInitialZoom();
+                          },
+                        ),
                       ),
           ),
 
           // ── PACNIĘCIE W ŚRODEK → pokaż AppBar ────────────────────────
+          // ── PODWÓJNE PACNIĘCIE → powrót do kafelków ─────────────────
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTap: _showAppBarAndHideAfter3s,
+              onDoubleTap: () {
+                _hideTimer?.cancel();
+                Navigator.pop(context);
+              },
             ),
           ),
 

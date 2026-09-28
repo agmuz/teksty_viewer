@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>78. Płonąca stodoła</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 10px 20px 150px 10px;
+    background-color: #faf0d7;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(26px, 5vw, 36px);
+    font-weight: 800;
+  }
+
+  .lyrics {
+    font-size: clamp(16px, 4.4vw, 30px);
+    line-height: 1.0;
+    color: #222;
+    white-space: pre-wrap;
+  }
+
+  .back-button, .back-concert {
+    position: fixed;
+    bottom: 2vh;
+    padding: 1rem 2rem;
+    font-size: clamp(1rem, 1.5vw, 1.5rem);
+    font-weight: bold;
+    border-radius: 12px;
+    border: 2px solid #c00d0d;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease-in-out;
+    background: transparent;
+    z-index: 10;
+  }
+
+  .music-button {
+    position: fixed;
+    top: 2vh;
+    right: 2vw;
+    background: transparent;
+    color: rgb(0,0,0);
+    border: 2px solid #c00d0d;
+    border-radius: 12px;
+    padding: 0.8rem 1.6rem;
+    font-size: clamp(1rem, 1.5vw, 1.5rem);
+    font-weight: bold;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease-in-out;
+    z-index: 10;
+  }
+
+  .music-button:hover {
+    background: rgba(0, 0, 0, 0.05);
+    transform: scale(1.05);
+  }
+
+  .back-button:hover, .back-concert:hover {
+    background: rgba(0,0,0,0.05);
+    transform: translateX(-50%) scale(1.05);
+  }
+
+  .back-button {
+    left: 25%;
+    transform: translateX(-50%);
+    color: rgb(0,0,0);
+  }
+
+  .back-concert {
+    left: 75%;
+    transform: translateX(-50%);
+    color: rgb(0,0,0);
+  }
+
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 480px) {
+    .lyrics {
+      font-size: clamp(20px, 5vw, 30px);
+      line-height: 1.1;
+    }
+
+    h1 {
+      font-size: clamp(24px, 6.6vw, 42px);
+    }
+  }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>78. Płonąca stodoła</h1>
+<div class="lyrics">
+F F B F C F 
+Mówią płonie stodoła płonie aż strach, aż kurzy się z niej
+Trzeszczy wszystko dokoła ściany i dach gorąco, że hej
+Pobiegnij tam do niej szkoda czasu, bo
+stodoła płonie, a w niej ludzie jacyś są,
+Sołtys chyba już zwołał prawie pół wsi, pomagaj i ty.
+Płonie stodoła, alarm trwa, więc myślę, a niech...
+Dlaczego właśnie ja miałbym brać w dudy miech?
+
+Chwytam wiadro więc w dłonie biegnę co tchu i widzę tam co
+Płoną oczy i skronie, bawi się tu, par chyba ze sto,
+To sołtys swoją córkę za mąż dzisiaj dał
+Do żonki pali się pan młody - chłop na schwał.
+Zbrakło miejsca w mieszkaniu, ojciec i teść ugościć chciał wieś
+W swojej stodole zrobił bal, tańczyłem i ja....
+Tak mogą płonąć stodoły każdego dnia...
+
+Mówią płonie stodoła płonie aż strach, aż kurzy się z niej
+Trzeszczy wszystko dokoła ściany i dach gorąco, że hej
+To sołtys swoją córkę za mąż dzisiaj dał
+Do żonki pali się pan młody - chłop na schwał.
+Zbrakło miejsca w mieszkaniu, ojciec i teść ugościć chciał wieś
+W swojej stodole zrobił bal, tańczyłem i ja....
+Tak mogą płonąć stodoły każdego dnia...
+
+</div>
+
+<button class="back-button" onclick="window.location.href='spis.html'">
+  ⬅️ spis
+</button>
+
+<button class="back-concert" onclick="window.location.href='spis_koncert.html'">
+  ⬅️ koncert
+</button>
+
+<button class="music-button" onclick="toggleMusic()">🎵</button>
+
+<audio id="player" src="muza77.mp3"></audio>
+
+</div>
+
+<script>
+let playing = false;
+
+const player = document.getElementById('player');
+const btn = document.querySelector('.music-button');
+
+function toggleMusic() {
+  if (!playing) {
+    player.play();
+    btn.textContent = '⏸️';
+    playing = true;
+  } else {
+    player.pause();
+    btn.textContent = '🎵';
+    playing = false;
+  }
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Porębiok</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 10px 20px 150px 10px;
+  background-color: #faf0d7;
+}   /* ← TU BRAKOWAŁO TEGO NAWIASU */
+
+h1 {
+  margin: 0;
+  font-size: clamp(26px, 6vw, 46px);
+  font-weight: 800;
+}
+
+.lyrics {
+  font-size: clamp(18px, 5vw, 38px);
+  line-height: 1.0;
+  color: #222;
+  white-space: pre-wrap;
+}
+
+
+   /* Styl przycisków powrotu */
+  .back-button, .back-concert {
+    position: fixed;
+    bottom: 2vh;
+    padding: 1rem 2rem;
+    font-size: clamp(1rem, 1.5vw, 1.5rem);
+    font-weight: bold;
+    border-radius: 12px;
+    border: 2px solid #c00d0d;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease-in-out;
+    background: transparent;
+  }
+ /* Przyciski muzyki */
+  .music-button {
+    position: fixed;
+    top: 2vh;
+    right: 2vw;
+    background: transparent;
+    color: rgb(0,0,0);
+    border: 2px solid #c00d0d;
+    border-radius: 12px;
+    padding: 0.8rem 1.6rem;
+    font-size: clamp(1rem, 1.5vw, 1.5rem);
+    font-weight: bold;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease-in-out;
+    z-index: 10;
+  }
+
+  .music-button:hover {
+    background: rgba(0, 0, 0, 0.05);
+    transform: scale(1.05);
+  }
+  .back-button:hover, .back-concert:hover {
+    background: rgba(0,0,0,0.05);
+    transform: scale(1.05);
+  }
+
+  /* Lewy przycisk – powrót do spisu */
+  .back-button {
+    left: 25%;
+    transform: translateX(-50%);
+    color: rgb(0,0,0);
+  }
+
+  /* Prawy przycisk – powrót do spisu koncertowego */
+  .back-concert {
+    left: 75%;
+    transform: translateX(-50%);
+    color: rgb(0,0,0);
+  }
+  .container {
+  max-width: 1000px;     /* tutaj regulujesz szerokość treści */
+  margin: 0 auto;       /* automatyczne centrowanie */
+}
+/* Telefony do 480px (iPhone 14 Pro Max ma 430px) */
+@media (max-width: 480px) {
+  .lyrics {
+    font-size: clamp(20px, 4.8vw, 32px);
+    line-height:1.1;
+  }
+
+  h1 {
+    font-size: clamp(24px, 6.6vw, 42px);
+  }
+}
+
+
+</style>
+
+</head>
+<body>
+<div class="container">
+
+<h1>2. Porębiok      d-moll</h1>
+<div class="lyrics">
+Którędy, którędy dróżka do Poręby
+bo mi Porębianka obiecała gęby
+
+Obiecała gęby, obiecała pyska
+Którędy, którędy,do Poręby ściżka
+    
+Z góry jedz, z góry jedz, na dolinie hamuj
+Masz ładną dziewczynę, tylko se ją szanuj
+
+Z góry ja pojadę, chował się nie będę
+Mam ładną dziewczynę, szanował ją będę
+
+Nic nie mam, nic nie mam, woda mi zabrała
+Tylko mi na brzegu, dziewczyna została
+</div>
+
+  <button class="back-button" onclick="window.location.href='spis.html'">
+    ⬅️ spis
+  </button>
+
+  <button class="back-concert" onclick="window.location.href='spis_koncert.html'">
+    ⬅️ koncert
+  <button class="music-button" onclick="toggleMusic()">🎵</button>
+  <audio id="player" src="muza1.mp3"></audio>
+</div>
+
+<script>
+let playing = false;
+const player = document.getElementById('player');
+const btn = document.querySelector('.music-button');
+
+function toggleMusic() {
+  if (!playing) {
+    player.play();
+    btn.textContent = '⏸️';
+    playing = true;
+  } else {
+    player.pause();
+    btn.textContent = '🎵';
+    playing = false;
+  }
+}
+</script>
+
+</button></body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Apassionata</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 10px 20px 150px 10px;
+    background-color: #faf0d7;
+h1 {
+  margin: 0;
+  font-size: clamp(26px, 6vw, 46px); /* tytuł skaluje się z urządzeniem */
+  font-weight: 800;
+}
+
+.lyrics {
+  font-size: clamp(18px, 4.4vw, 38px);
+  line-height: 1.0;
+  color: #222;
+  white-space: pre-wrap;
+}
+
+   /* Styl przycisków powrotu */
+  .back-button, .back-concert {
+    position: fixed;
+    bottom: 2vh;
+    padding: 1rem 2rem;
+    font-size: clamp(1rem, 1.5vw, 1.5rem);
+    font-weight: bold;
+    border-radius: 12px;
+    border: 2px solid #c00d0d;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease-in-out;
+    background: transparent;
+  }
+ /* Przyciski muzyki */
+  .music-button {
+    position: fixed;
+    top: 2vh;
+    right: 2vw;
+    background: transparent;
+    color: rgb(0,0,0);
+    border: 2px solid #c00d0d;
+    border-radius: 12px;
+    padding: 0.8rem 1.6rem;
+    font-size: clamp(1rem, 1.5vw, 1.5rem);
+    font-weight: bold;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease-in-out;
+    z-index: 10;
+  }
+
+  .music-button:hover {
+    background: rgba(0, 0, 0, 0.05);
+    transform: scale(1.05);
+  }
+  .back-button:hover, .back-concert:hover {
+    background: rgba(0,0,0,0.05);
+    transform: scale(1.05);
+  }
+
+  /* Lewy przycisk – powrót do spisu */
+  .back-button {
+    left: 25%;
+    transform: translateX(-50%);
+    color: rgb(0,0,0);
+  }
+
+  /* Prawy przycisk – powrót do spisu koncertowego */
+  .back-concert {
+    left: 75%;
+    transform: translateX(-50%);
+    color: rgb(0,0,0);
+  }
+  .container {
+  max-width: 1000px;     /* tutaj regulujesz szerokość treści */
+  margin: 0 auto;       /* automatyczne centrowanie */
+}
+/* Telefony do 480px (iPhone 14 Pro Max ma 430px) */
+@media (max-width: 480px) {
+  .lyrics {
+    font-size: clamp(20px, 4.6vw, 30px);
+    line-height:1.1;
+  }
+
+  h1 {
+    font-size: clamp(24px, 6.6vw, 42px);
+  }
+}
+
+
+
+}
+</style>
+
+</head>
+<body>
+<div class="container">
+
+<h1>67. Apassionata    a - moll</h1>
+<div class="lyrics">
+Apassionata wspomnienie dawnych dni
+Apassionata melodia szczęścia chwil
+Dla ciebie grałem gdy byłaś blisko mnie
+Swą wielką miłość chciałem ci wyznać w niej
+
+    Lecz prędko prześnił się
+    Nieśmiały sen o szczęściu i zostałem sam
+    Melodią teraz wzywam ciebie
+    Gdy znów cichutko gram
+    
+Apassionata znów w niej melodia brzmi
+Apassionata wróć szczęście mi
+
+    Lecz prędko prześnił się
+    Nieśmiały sen o szczęściu i zostałem sam
+    Melodią teraz wzywam ciebie
+    Gdy znów cichutko gram
+</div>
+  <button class="back-button" onclick="window.location.href='spis.html'">
+    ⬅️ spis
+  </button>
+
+  <button class="back-concert" onclick="window.location.href='spis_koncert.html'">
+    ⬅️ koncert
+  <button class="music-button" onclick="toggleMusic()">🎵</button>
+  <audio id="player" src="muza67.mp3"></audio>
+</div>
+
+<script>
+let playing = false;
+const player = document.getElementById('player');
+const btn = document.querySelector('.music-button');
+
+function toggleMusic() {
+  if (!playing) {
+    player.play();
+    btn.textContent = '⏸️';
+    playing = true;
+  } else {
+    player.pause();
+    btn.textContent = '🎵';
+    playing = false;
+  }
+}
+</script>
+
+</button></body>
+</html>

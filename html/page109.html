@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Franka</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 10px 20px 150px 10px;
+  background-color: #faf0d7;
+}   /* ← TU BRAKOWAŁO TEGO NAWIASU */
+
+h1 {
+  margin: 0;
+  font-size: clamp(26px, 6vw, 46px);
+  font-weight: 800;
+}
+
+.lyrics {
+  font-size: clamp(18px, 5vw, 38px);
+  line-height: 1.0;
+  color: #222;
+  white-space: pre-wrap;
+}
+
+    /* Styl przycisków powrotu */
+  .back-button, .back-concert {
+    position: fixed;
+    bottom: 2vh;
+    padding: 1rem 2rem;
+    font-size: clamp(1rem, 1.5vw, 1.5rem);
+    font-weight: bold;
+    border-radius: 12px;
+    border: 2px solid #c00d0d;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease-in-out;
+    background: transparent;
+  }
+ /* Przyciski muzyki */
+  .music-button {
+    position: fixed;
+    top: 2vh;
+    right: 2vw;
+    background: transparent;
+    color: rgb(0,0,0);
+    border: 2px solid #c00d0d;
+    border-radius: 12px;
+    padding: 0.8rem 1.6rem;
+    font-size: clamp(1rem, 1.5vw, 1.5rem);
+    font-weight: bold;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease-in-out;
+    z-index: 10;
+  }
+
+  .music-button:hover {
+    background: rgba(0, 0, 0, 0.05);
+    transform: scale(1.05);
+  }
+  .back-button:hover, .back-concert:hover {
+    background: rgba(0,0,0,0.05);
+    transform: scale(1.05);
+  }
+
+  /* Lewy przycisk – powrót do spisu */
+  .back-button {
+    left: 25%;
+    transform: translateX(-50%);
+    color: rgb(0,0,0);
+  }
+
+  /* Prawy przycisk – powrót do spisu koncertowego */
+  .back-concert {
+    left: 75%;
+    transform: translateX(-50%);
+    color: rgb(0,0,0);
+  }
+
+</style>
+</head>
+<body>
+
+<h1>9. Ach Frania      c-moll</h1>
+<div class="lyrics">
+Jak długo mam tu stać na ulicy 
+Pod oknem Franki, tej cholernicy?
+I ja tu stoję i kumple stoją, 
+Od tego stania już nogi bolą.
+
+    Ach Franka, Franka, powiedzże, Frania, 
+    Co z nami będzie względem kochania? /2x
+    
+Grajże, muzyko, grajże wesoło, 
+Może mnie wreszcie Franka zawoła.
+Będziemy razem muzyczki słuchać, 
+Będziemy razem piwko popijać!
+
+    Przez to staranie nic-żem nie zyskał, 
+    Anim się najadł, anim nie wyspał,
+    Tylkom na ciebie pieniądze stracił, 
+    Wódkę fundował, muzykę płacił!
+    
+Ach Franka, Franka, co ja mam zrobić? 
+Czy kark ci skręcić, czy nożem zabić?
+Nimżem tu przyszedł pod twoje progi, 
+Bodajbym złamał obydwie nogi.
+
+    Ach Franka, Franka, wyglądasz pięknie
+    Chyba z tej złości serce mi pęknie
+    Ach Franka, Franka, wyglądasz pięknie
+    Chyba z tej złości serce mi pęknie.
+
+</div>
+  <button class="back-button" onclick="window.location.href='spis.html'">
+    ⬅️ spis
+  </button>
+
+  <button class="back-concert" onclick="window.location.href='spis_koncert.html'">
+    ⬅️ koncert
+  <button class="music-button" onclick="toggleMusic()">🎵</button>
+  <audio id="player" src="franka.mp3"></audio>
+</div>
+
+<script>
+let playing = false;
+const player = document.getElementById('player');
+const btn = document.querySelector('.music-button');
+
+function toggleMusic() {
+  if (!playing) {
+    player.play();
+    btn.textContent = '⏸️';
+    playing = true;
+  } else {
+    player.pause();
+    btn.textContent = '🎵';
+    playing = false;
+  }
+}
+</script>
+
+</button></body>
+</html>
