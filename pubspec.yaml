@@ -39,7 +39,6 @@ dependencies:
   shared_preferences: ^2.5.5
   syncfusion_flutter_pdf: ^34.2.9
   share_plus: ^13.3.0
-  dart_pdf_editor: ^5.0.0
   pdfrx: ^2.6.5
   photo_view: ^0.15.0
   saf: ^2.1.2

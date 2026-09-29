@@ -1083,7 +1083,7 @@ class _FileListScreenState extends State<FileListScreen>
   Widget _buildBankBar() {
     debugPrint('DEBUG _buildBankBar: _banks=$_banks, _activeBank=$_activeBank');
     return Container(
-      height: 44,
+      height: 96,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       color: AppColors.topBar.withValues(alpha: 0.85),
       child: ListView.builder(
@@ -1095,8 +1095,8 @@ class _FileListScreenState extends State<FileListScreen>
             return Padding(
               padding: const EdgeInsets.only(right: 6),
               child: ActionChip(
-                avatar: const Icon(Icons.add, size: 16),
-                label: const Text('Nowy'),
+                avatar: const Icon(Icons.add, size: 32),
+                label: const Text('Nowy', style: TextStyle(fontSize: 22)),
                 onPressed: _askForNewBank,
               ),
             );
@@ -1110,7 +1110,7 @@ class _FileListScreenState extends State<FileListScreen>
               onLongPress: () => _showBankMenu(bank),
               child: ChoiceChip(
                 key: ValueKey('chip_$bank'),       // ← KLUCZ dla chipa
-                label: Text(bank),
+                label: Text(bank, style: const TextStyle(fontSize: 22)),
                 selected: active,
                 onSelected: (_) => _switchBank(bank),
               ),
@@ -1427,7 +1427,7 @@ class _FileListScreenState extends State<FileListScreen>
 
   Widget _buildTopBar(Playlist? activePlaylist) {
     return Container(
-      height: 56,
+      height: 96,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       color: AppColors.topBar,
       child: Row(
@@ -1435,10 +1435,10 @@ class _FileListScreenState extends State<FileListScreen>
           if (_activePlaylistId != null)
             IconButton(
               icon: const Icon(Icons.arrow_back,
-                  color: Colors.white, size: 22),
+                  color: Colors.white, size: 44),
               padding: EdgeInsets.zero,
               constraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 36),
+                  const BoxConstraints(minWidth: 64, minHeight: 64),
               tooltip: 'Wróć',
               onPressed: _closePlaylist,
             ),
@@ -1455,9 +1455,10 @@ class _FileListScreenState extends State<FileListScreen>
                       onLongPress: () => _showPlaylistMenu(pl),
                       child: ActionChip(
                         avatar:
-                            const Icon(Icons.queue_music, size: 16),
+                            const Icon(Icons.queue_music, size: 32),
                         label: Text(
-                            '${pl.name} (${pl.fileNames.length})'),
+                            '${pl.name} (${pl.fileNames.length})',
+                            style: const TextStyle(fontSize: 22)),
                         onPressed: () => _openPlaylist(pl),
                       ),
                     ),
@@ -1471,7 +1472,7 @@ class _FileListScreenState extends State<FileListScreen>
                 activePlaylist?.name ?? '',
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 26,
                   fontWeight: FontWeight.w600,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -1483,7 +1484,7 @@ class _FileListScreenState extends State<FileListScreen>
                 'Teksty',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 26,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1493,36 +1494,36 @@ class _FileListScreenState extends State<FileListScreen>
             child: Text(
               '${_filteredFiles.length}',
               style:
-                  const TextStyle(color: Colors.white70, fontSize: 12),
+                  const TextStyle(color: Colors.white70, fontSize: 22),
             ),
           ),
           IconButton(
             icon: Icon(
               _searchOpen ? Icons.search_off : Icons.search,
               color: Colors.white,
-              size: 22,
+              size: 44,
             ),
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
             tooltip: 'Szukaj',
             onPressed: () =>
                 setState(() => _searchOpen = !_searchOpen),
           ),
           if (!_buildMode && _activePlaylistId == null)
             IconButton(
-              icon: const Icon(Icons.add, color: Colors.white, size: 22),
+              icon: const Icon(Icons.add, color: Colors.white, size: 44),
               padding: EdgeInsets.zero,
               constraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 36),
+                  const BoxConstraints(minWidth: 64, minHeight: 64),
               tooltip: 'Nowa playlista',
               onPressed: _startNewPlaylist,
             ),
           if (_activePlaylistId != null && !_buildMode)
             IconButton(
-              icon: const Icon(Icons.edit, color: Colors.white, size: 22),
+              icon: const Icon(Icons.edit, color: Colors.white, size: 44),
               padding: EdgeInsets.zero,
               constraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 36),
+                  const BoxConstraints(minWidth: 64, minHeight: 64),
               tooltip: 'Edytuj playlistę',
               onPressed: () {
                 final pl = _playlists
@@ -1533,10 +1534,10 @@ class _FileListScreenState extends State<FileListScreen>
           if (_activePlaylistId != null && !_buildMode)
             IconButton(
               icon: const Icon(Icons.picture_as_pdf,
-                  color: Colors.white, size: 22),
+                  color: Colors.white, size: 44),
               padding: EdgeInsets.zero,
               constraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 36),
+                  const BoxConstraints(minWidth: 64, minHeight: 64),
               tooltip: 'Wygeneruj PDF',
               onPressed: () {
                 final pl = _playlists
@@ -1547,28 +1548,28 @@ class _FileListScreenState extends State<FileListScreen>
           if (_hasPlayedInCurrent && !_buildMode)
             IconButton(
               icon: const Icon(Icons.cleaning_services,
-                  color: Colors.white, size: 22),
+                  color: Colors.white, size: 44),
               padding: EdgeInsets.zero,
               constraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 36),
+                  const BoxConstraints(minWidth: 64, minHeight: 64),
               tooltip: 'Czyść listę',
               onPressed: _clearCurrentPlayed,
             ),
           if (_files.isNotEmpty && !_buildMode)
             IconButton(
               icon: const Icon(Icons.delete_sweep,
-                  color: Colors.redAccent, size: 22),
+                  color: Colors.redAccent, size: 44),
               padding: EdgeInsets.zero,
               constraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 36),
+                  const BoxConstraints(minWidth: 64, minHeight: 64),
               tooltip: 'Usuń wszystko',
               onPressed: _deleteAllFiles,
             ),
           IconButton(
             icon: const Icon(Icons.folder_open,
-                color: Colors.white, size: 22),
+                color: Colors.white, size: 44),
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
             tooltip: 'Zmień folder',
             onPressed: _importPdfs,
           ),
