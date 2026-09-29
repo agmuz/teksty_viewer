@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:pdfrx/pdfrx.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/colors.dart';
 
 class PdfViewerScreen extends StatefulWidget {
@@ -55,6 +56,58 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     super.dispose();
   }
 
+  /// Klucz do SharedPreferences dla danego pliku PDF.
+  String _zoomKey(String path) {
+    final name = path.split('/').last;
+    return 'pdf_zoom_$name';
+  }
+
+  /// Zapisuje aktualna macierz PDF dla biezacego pliku.
+  Future<void> _saveZoomForCurrentFile() async {
+    if (!_pdfController.isReady) return;
+    try {
+      final m = _pdfController.value;
+
+      final vals = <double>[
+        m.storage[0], m.storage[1], m.storage[2], m.storage[3],
+        m.storage[4], m.storage[5], m.storage[6], m.storage[7],
+        m.storage[8], m.storage[9], m.storage[10], m.storage[11],
+        m.storage[12], m.storage[13], m.storage[14], m.storage[15],
+      ];
+
+      final prefs = await SharedPreferences.getInstance();
+      final key = _zoomKey(_currentPath);
+      await prefs.setStringList(key, vals.map((v) => v.toString()).toList());
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Zapisano zoom dla: $_title')),
+      );
+    } catch (e) {
+      print('Blad zapisu zoom: $e');
+    }
+  }
+
+  /// Zwraca zapisana macierz jesli istnieje.
+  Future<Matrix4?> _loadSavedZoom() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = _zoomKey(_currentPath);
+      final list = prefs.getStringList(key);
+      if (list == null || list.length != 16) return null;
+
+      final vals = list.map((s) => double.tryParse(s) ?? 0.0).toList();
+      final m = Matrix4.identity();
+      for (var i = 0; i < 16; i++) {
+        m.storage[i] = vals[i];
+      }
+      return m;
+    } catch (e) {
+      print('Blad odczytu zoom: $e');
+      return null;
+    }
+  }
+
   void _showAppBarAndHideAfter3s() {
     _hideTimer?.cancel();
     setState(() => _appBarVisible = true);
@@ -100,6 +153,16 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         final ctrl = _pdfController;
         if (!ctrl.isReady) continue;
 
+        // 1) Sprawdz, czy jest zapisany zoom dla tego pliku
+        final saved = await _loadSavedZoom();
+        if (saved != null) {
+          ctrl.value = ctrl.makeMatrixInSafeRange(saved);
+          _didInitialZoom = true;
+          print('ZOOM: przywrocono z prefs');
+          return;
+        }
+
+        // 2) Brak zapisu — domyslny fit-height * 1.05
         // Macierz dla strony 1 z anchorem na gorze-lewo
         final baseMatrix = ctrl.calcMatrixFitHeightForPage(pageNumber: 1);
         if (baseMatrix == null) continue;
@@ -263,6 +326,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
               onDoubleTap: () {
                 _hideTimer?.cancel();
                 Navigator.pop(context);
+              },
+              onLongPress: () {
+                _saveZoomForCurrentFile();
               },
             ),
           ),

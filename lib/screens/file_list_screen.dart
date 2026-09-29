@@ -26,6 +26,7 @@ class _FileListScreenState extends State<FileListScreen>
   String _status = 'Ładowanie...';
   String? _folderPath;
   String _activeBank = 'kapela1';
+  String? _previousBank;
   List<String> _banks = [];
   Map<String, String> _bankUris = {};
   final Saf _saf = Saf();
@@ -322,6 +323,7 @@ class _FileListScreenState extends State<FileListScreen>
   Future<void> _switchBank(String bank) async {
     if (bank == _activeBank) return;
     setState(() {
+      _previousBank = _activeBank;
       _activeBank = bank;
       _activePlaylistId = null;
       _searchController.clear();
@@ -1009,6 +1011,15 @@ class _FileListScreenState extends State<FileListScreen>
             icon: const Icon(Icons.add),
             label: const Text('Dodaj pliki'),
           ),
+          if (_previousBank != null) ...[
+            const SizedBox(height: 24),
+            TextButton.icon(
+              onPressed: () => _switchBank(_previousBank!),
+              icon: const Icon(Icons.arrow_back, color: Colors.redAccent),
+              label: const Text('Wroc do poprzedniego banku',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 16)),
+            ),
+          ],
         ],
       ),
     );
@@ -1031,6 +1042,15 @@ class _FileListScreenState extends State<FileListScreen>
             onPressed: _importPdfs,
             child: const Text('Zmień folder'),
           ),
+          if (_previousBank != null) ...[
+            const SizedBox(height: 24),
+            TextButton.icon(
+              onPressed: () => _switchBank(_previousBank!),
+              icon: const Icon(Icons.arrow_back, color: Colors.redAccent),
+              label: const Text('Wroc do poprzedniego banku',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 16)),
+            ),
+          ],
         ],
       ),
     );
