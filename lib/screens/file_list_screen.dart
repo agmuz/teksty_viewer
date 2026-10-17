@@ -1214,8 +1214,9 @@ class _FileListScreenState extends State<FileListScreen>
                                   // Wysokość pasków (topBar 96 + bankBar 96
                                   // w widoku banku; w widoku playlisty tylko
                                   // topBar 96).
-                                  final barsHeight =
-                                      _activePlaylistId == null ? 200.0 : 96.0;
+                                  final barsHeight = _activePlaylistId == null
+                                      ? (_searchOpen ? 270.0 : 200.0)
+                                      : (_searchOpen ? 170.0 : 96.0);
                                   return GridView.builder(
                                     padding: EdgeInsets.only(
                                       left: 4,
@@ -1291,7 +1292,6 @@ class _FileListScreenState extends State<FileListScreen>
                               children: [
                                 _buildTopBar(activePlaylist),
                                 if (_activePlaylistId == null) _buildBankBar(),
-                                if (_searchOpen) _buildSearchField(),
                               ],
                             ),
                           ),
@@ -1374,22 +1374,33 @@ class _FileListScreenState extends State<FileListScreen>
   }
 
   Widget _buildSearchField() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+    return Container(
+      color: AppColors.topBar.withValues(alpha: 0.85),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
       child: TextField(
         controller: _searchController,
         autofocus: true,
+        style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           hintText: 'Szukaj po tytule...',
-          prefixIcon: const Icon(Icons.search, size: 20),
+          hintStyle: const TextStyle(color: Colors.white54),
+          prefixIcon: const Icon(Icons.search, color: Colors.white, size: 20),
           suffixIcon: IconButton(
-            icon: const Icon(Icons.close, size: 20),
+            icon: const Icon(Icons.close, color: Colors.white, size: 20),
             onPressed: () {
               _searchController.clear();
               setState(() => _searchOpen = false);
             },
           ),
-          border: const OutlineInputBorder(),
+          border: const OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.white54),
+          ),
+          enabledBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.white54),
+          ),
+          focusedBorder: const OutlineInputBorder(
+            borderSide: BorderSide(color: Colors.white),
+          ),
           isDense: true,
         ),
       ),
@@ -1399,10 +1410,14 @@ class _FileListScreenState extends State<FileListScreen>
   /// Poziomy pasek z bankami (chipsy) + przycisk dodania nowego.
   Widget _buildBankBar() {
     return Container(
-      height: 96,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       color: AppColors.topBar.withValues(alpha: 0.85),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 96,
+            child: Row(
         children: [
           Expanded(
             child: ListView.builder(
@@ -1479,6 +1494,11 @@ class _FileListScreenState extends State<FileListScreen>
             onPressed: () =>
                 setState(() => _searchOpen = !_searchOpen),
           ),
+        ],
+      ),
+          ),
+          // Wiersz 2 — pole wyszukiwania (gdy _searchOpen).
+          if (_searchOpen) _buildSearchField(),
         ],
       ),
     );
