@@ -561,6 +561,7 @@ class _FileListScreenState extends State<FileListScreen>
       final outFile = await PdfService.mergePdfs(
         inputPaths: paths,
         outputPath: outPath,
+        playlistName: pl.name,
       );
 
       // Zamknij loader
