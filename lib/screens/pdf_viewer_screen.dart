@@ -51,10 +51,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   void dispose() {
     _hideTimer?.cancel();
     _keyboardFocus.dispose();
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: SystemUiOverlay.values,
-    );
+    // Po powrocie z PDF — zostań w fullscreen (immersiveSticky).
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     super.dispose();
   }
 

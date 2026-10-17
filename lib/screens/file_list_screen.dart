@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:saf/saf.dart';
 import 'package:path_provider/path_provider.dart';
+import '../models/bank.dart';
 import '../models/playlist.dart';
 import '../services/pref_service.dart';
 import '../services/pdf_service.dart';
@@ -25,11 +26,23 @@ class _FileListScreenState extends State<FileListScreen>
   bool _loading = true;
   String _status = 'Ładowanie...';
   String? _folderPath;
-  String _activeBank = 'kapela1';
-  String? _previousBank;
-  List<String> _banks = [];
+  String? _activeBankId;
+  String? _previousBankId;
+  List<Bank> _banks = [];
   Map<String, String> _bankUris = {};
   final Saf _saf = Saf();
+
+  /// Aktywny bank (wyliczany z _banks + _activeBankId).
+  Bank? get _activeBank {
+    if (_activeBankId == null) return null;
+    for (final b in _banks) {
+      if (b.id == _activeBankId) return b;
+    }
+    return null;
+  }
+
+  /// Nazwa aktywnego banku (dla folderów na dysku).
+  String get _activeBankName => _activeBank?.name ?? 'bank1';
 
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _playlistNameController =
@@ -37,6 +50,8 @@ class _FileListScreenState extends State<FileListScreen>
 
   bool _searchOpen = false;
   bool _buildMode = false;
+  bool _editMode = false;
+  bool _barsVisible = true;
   Playlist? _editingPlaylist;
   List<String> _selectedFileNames = [];
 
@@ -72,16 +87,26 @@ class _FileListScreenState extends State<FileListScreen>
   String get _currentPlayedKey => _activePlaylistId ?? _playedAllKey;
 
           Future<void> _init() async {
+    // Krok 1: usuń stare dane (reset v2).
+    await PrefService.resetOldData();
+
     _banks = await PrefService.loadBanks();
     _bankUris = await PrefService.loadBankUris();
-    _activeBank = await PrefService.loadActiveBank();
-    if (!_banks.contains(_activeBank) && _banks.isNotEmpty) {
-      _activeBank = _banks.first;
+    _activeBankId = await PrefService.loadActiveBankId();
+    if (_activeBankId == null && _banks.isNotEmpty) {
+      _activeBankId = _banks.first.id;
     }
-    _playlists = await PrefService.loadPlaylists(_activeBank);
-    _playedByPlaylist = await PrefService.loadPlayed(_activeBank);
+    if (_activeBankId != null &&
+        !_banks.any((b) => b.id == _activeBankId)) {
+      _activeBankId = _banks.isNotEmpty ? _banks.first.id : null;
+    }
+    if (_activeBankId != null) {
+      _playlists = await PrefService.loadPlaylistsForBank(_activeBankId!);
+      _playedByPlaylist =
+          await PrefService.loadPlayedForBank(_activeBankId!);
+    }
 
-    // ZAWSZE folder wewnętrzny apki: Documents/teksty
+    // Folder wewnętrzny apki: Documents/teksty/<nazwa banku>
     final dir = await _defaultAppDir();
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -92,21 +117,26 @@ class _FileListScreenState extends State<FileListScreen>
 
   Future<Directory> _defaultAppDir() async {
     final docs = await getApplicationDocumentsDirectory();
-    return Directory('${docs.path}/teksty/$_activeBank');
+    return Directory('${docs.path}/teksty/$_activeBankName');
   }
 
       
   Future<void> _importPdfs() async {
     // Zamiast FilePicker — używamy SAF (Dysk Google) i wywołujemy _setBankUri,
     // żeby bank automatycznie przyjął nazwę folderu (jeśli ma domyślną).
-    await _setBankUri(_activeBank);
+    if (_activeBank != null) {
+      await _setBankUri(_activeBank!);
+    }
   }
 
   /// Wskazanie folderu źródłowego (Dysk Google) dla banku + od razu kopiowanie.
   /// Nazwa banku zostaje automatycznie zmieniona na nazwę folderu z Dysku Google
   /// (jeśli bank ma nazwę domyślną bank1..bank5 albo pustą).
-  Future<void> _setBankUri(String bank) async {
-    debugPrint('SETBANK START: bank=$bank');
+  Future<void> _setBankUri(Bank bank) async {
+    // Zapamiętaj, czy bank MIAŁ już folder źródłowy.
+    // Jeśli tak — to zmiana folderu (usuwamy stare pliki).
+    final hadUriBefore = _bankUris[bank.id] != null;
+
     SafDocumentFile? dir;
     try {
       dir = await _saf.pickDirectory();
@@ -118,27 +148,26 @@ class _FileListScreenState extends State<FileListScreen>
       return;
     }
     if (dir == null) {
-      debugPrint('SETBANK: user cancelled');
       return;
     }
-    debugPrint('SETBANK: dir.name="${dir.name}", dir.uri="${dir.uri}"');
 
     // Wyciągnij nazwę folderu z Dysku Google
     final folderName = dir.name.trim();
 
     // Sprawdź czy bank ma nazwę domyślną (bank1..bank5)
-    final isDefaultName = RegExp(r'^bank\d+$').hasMatch(bank);
+    final isDefaultName = RegExp(r'^bank\d+$').hasMatch(bank.name);
     final shouldRename = folderName.isNotEmpty &&
         isDefaultName &&
-        folderName != bank;
+        folderName != bank.name;
 
-    var effectiveBank = bank;
+    Bank effectiveBank = bank;
 
     if (shouldRename) {
       // Nowa nazwa — sprawdź kolizje
       var newName = folderName;
       var counter = 2;
-      while (_banks.contains(newName) && newName != bank) {
+      while (_banks.any((b) => b.name == newName) &&
+          newName != bank.name) {
         newName = '$folderName ($counter)';
         counter++;
       }
@@ -146,59 +175,73 @@ class _FileListScreenState extends State<FileListScreen>
       try {
         // Zmień nazwę katalogu lokalnego
         final currentDir = await _defaultAppDir();
-        final oldDir = Directory('${currentDir.parent.path}/$bank');
+        final oldDir = Directory('${currentDir.parent.path}/${bank.name}');
         final newDir = Directory('${currentDir.parent.path}/$newName');
         if (await oldDir.exists() && !await newDir.exists()) {
           await oldDir.rename(newDir.path);
         }
 
-        // Przenieś playlisty i oznaczenia
-        final pl = await PrefService.loadPlaylists(bank);
-        final played = await PrefService.loadPlayed(bank);
-        await PrefService.savePlaylists(newName, pl);
-        await PrefService.savePlayed(newName, played);
-        await PrefService.clearBankData(bank);
-
-        // Przenieś URI
-        _bankUris.remove(bank);
-        _bankUris[newName] = dir.uri;
-        await PrefService.saveBankUris(_bankUris);
-
-        // Zaktualizuj listę banków W PAMIĘCI, potem zapisz
+        // Zaktualizuj bank W PAMIĘCI (id zostaje, name się zmienia)
+        final renamedBank = bank.copyWith(name: newName);
         setState(() {
-          final idx = _banks.indexOf(bank);
-          if (idx >= 0) _banks[idx] = newName;
+          final idx = _banks.indexWhere((b) => b.id == bank.id);
+          if (idx >= 0) _banks[idx] = renamedBank;
         });
         await PrefService.saveBanks(_banks);
 
-        // Jeśli to był aktywny bank — zaktualizuj
-        if (_activeBank == bank) {
-          setState(() {
-            _activeBank = newName;
-          });
-          await PrefService.saveActiveBank(newName);
-        }
+        // Przenieś URI (klucz = id, więc bez zmian)
+        _bankUris[bank.id] = dir.uri;
+        await PrefService.saveBankUris(_bankUris);
 
-        effectiveBank = newName;
-        debugPrint('SETBANK Bank "$bank" -> "$newName"');
+        effectiveBank = renamedBank;
       } catch (e) {
-        debugPrint('Błąd zmiany nazwy banku: $e');
       }
     } else {
-      // Nie zmieniamy nazwy — tylko zapisz URI
-      _bankUris[bank] = dir.uri;
-      await PrefService.saveBankUri(bank, dir.uri);
+      // Nie zmieniamy nazwy — tylko zapisz URI (klucz = id)
+      _bankUris[bank.id] = dir.uri;
+      await PrefService.saveBankUris(_bankUris);
     }
 
-    // Przeładuj listę banków z PrefService i wymuś odświeżenie UI
+    // Przeładuj banki z PrefService
     _banks = await PrefService.loadBanks();
     if (!mounted) return;
     setState(() {});
 
+    // Zmiana folderu — usuń stare pliki z lokalnego katalogu banku.
+    if (hadUriBefore) {
+      try {
+        final localDir = await _defaultAppDir();
+        if (await localDir.exists()) {
+          final files = await localDir.list().toList();
+          var removed = 0;
+          for (final f in files) {
+            if (f is File) {
+              try {
+                await f.delete();
+                removed++;
+              } catch (_) {}
+            }
+          }
+          if (mounted && removed > 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Usunięto $removed starych plików z "${effectiveBank.name}"',
+                ),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        // ignore: avoid_print
+        print('Błąd usuwania starych plików: $e');
+      }
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Wybrano folder dla "$effectiveBank" — kopiuję pliki...',
+          'Wybrano folder dla "${effectiveBank.name}" — kopiuję pliki...',
         ),
       ),
     );
@@ -208,12 +251,12 @@ class _FileListScreenState extends State<FileListScreen>
 
   /// Kopiuje nowe pliki z folderu źródłowego (Dysk Google) do lokalnego banku.
   /// Pomija pliki już istniejące lokalnie.
-  Future<void> _refreshFromBankUri(String bank) async {
-    final uri = _bankUris[bank];
+  Future<void> _refreshFromBankUri(Bank bank) async {
+    final uri = _bankUris[bank.id];
     if (uri == null || uri.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bank "$bank" nie ma wskazanego folderu źródłowego')),
+        SnackBar(content: Text('Bank "${bank.name}" nie ma wskazanego folderu źródłowego')),
       );
       return;
     }
@@ -230,7 +273,7 @@ class _FileListScreenState extends State<FileListScreen>
     }
 
     final docs = await getApplicationDocumentsDirectory();
-    final localDir = Directory('${docs.path}/teksty/$bank');
+    final localDir = Directory('${docs.path}/teksty/${bank.name}');
     if (!await localDir.exists()) {
       await localDir.create(recursive: true);
     }
@@ -267,7 +310,6 @@ class _FileListScreenState extends State<FileListScreen>
         await localFile.writeAsBytes(bytes);
         copied++;
       } catch (e) {
-        debugPrint('Błąd kopiowania ${f.name}: $e');
         errors++;
       }
     }
@@ -283,17 +325,17 @@ class _FileListScreenState extends State<FileListScreen>
     );
 
     // Jeśli bank aktywny — skanuj
-    if (bank == _activeBank) {
+    if (bank.id == _activeBankId) {
       await _scanFolder(localDir);
     }
   }
 
   /// Usuwa URI folderu źródłowego banku (pliki lokalne zostają).
-  Future<void> _clearBankUri(String bank) async {
+  Future<void> _clearBankUri(Bank bank) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Usunąć folder źródłowy banku "$bank"?'),
+        title: Text('Usunąć folder źródłowy banku "${bank.name}"?'),
         content: const Text(
             'Pliki lokalne zostaną. Usunięty zostanie tylko link do Dysku Google.'),
         actions: [
@@ -310,21 +352,21 @@ class _FileListScreenState extends State<FileListScreen>
     );
     if (confirm != true) return;
 
-    _bankUris.remove(bank);
-    await PrefService.saveBankUri(bank, null);
+    _bankUris.remove(bank.id);
+    await PrefService.saveBankUris(_bankUris);
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Usunięto link do folderu źródłowego "$bank"')),
+      SnackBar(content: Text('Usunięto link do folderu źródłowego "${bank.name}"')),
     );
   }
 
   /// Przełącza aktywny bank — ładuje playlisty/oznaczenia, skanuje katalog.
-  Future<void> _switchBank(String bank) async {
-    if (bank == _activeBank) return;
+  Future<void> _switchBank(Bank bank) async {
+    if (bank.id == _activeBankId) return;
     setState(() {
-      _previousBank = _activeBank;
-      _activeBank = bank;
+      _previousBankId = _activeBankId;
+      _activeBankId = bank.id;
       _activePlaylistId = null;
       _searchController.clear();
       _playlists = [];
@@ -336,9 +378,9 @@ class _FileListScreenState extends State<FileListScreen>
       _selectedFileNames = [];
       _playlistNameController.text = '';
     });
-    await PrefService.saveActiveBank(bank);
-    _playlists = await PrefService.loadPlaylists(bank);
-    _playedByPlaylist = await PrefService.loadPlayed(bank);
+    await PrefService.saveActiveBankId(bank.id);
+    _playlists = await PrefService.loadPlaylistsForBank(bank.id);
+    _playedByPlaylist = await PrefService.loadPlayedForBank(bank.id);
     final dir = await _defaultAppDir();
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -404,7 +446,12 @@ class _FileListScreenState extends State<FileListScreen>
       if (_activePlaylistId != null) {
         final pl = _playlists.firstWhere(
           (p) => p.id == _activePlaylistId,
-          orElse: () => Playlist(id: '', name: '', fileNames: []),
+          orElse: () => Playlist(
+          id: '',
+          name: '',
+          bankId: '',
+          fileNames: [],
+        ),
         );
         base = _files
             .where((f) => pl.fileNames.contains(f.path.split('/').last))
@@ -430,7 +477,10 @@ class _FileListScreenState extends State<FileListScreen>
     if (!list.contains(fileName)) {
       list.add(fileName);
       _playedByPlaylist[key] = list;
-      await PrefService.savePlayed(_activeBank, _playedByPlaylist);
+      if (_activeBankId != null) {
+        await PrefService.savePlayedForBank(
+            _activeBankId!, _playedByPlaylist);
+      }
       if (mounted) setState(() {});
     }
   }
@@ -624,19 +674,28 @@ class _FileListScreenState extends State<FileListScreen>
           removed++;
         }
       } catch (e) {
-        debugPrint('Błąd usuwania ${f.path}: $e');
       }
     }
 
     // wyczyść playlisty i oznaczenia
     setState(() {
       _playlists = _playlists
-          .map((p) => Playlist(id: p.id, name: p.name, fileNames: []))
+          .map((p) => Playlist(
+                id: p.id,
+                name: p.name,
+                bankId: p.bankId,
+                fileNames: [],
+              ))
           .toList();
       _playedByPlaylist = _playedByPlaylist.map((k, v) => MapEntry(k, []));
     });
-    await PrefService.savePlaylists(_activeBank, _playlists);
-    await PrefService.savePlayed(_activeBank, _playedByPlaylist);
+    if (_activeBankId != null) {
+      await PrefService.savePlaylistsForBank(_activeBankId!, _playlists);
+    }
+    if (_activeBankId != null) {
+      await PrefService.savePlayedForBank(
+          _activeBankId!, _playedByPlaylist);
+    }
 
     await _scanFolder(dir);
     if (!mounted) return;
@@ -676,6 +735,7 @@ class _FileListScreenState extends State<FileListScreen>
             .map((p) => Playlist(
                   id: p.id,
                   name: p.name,
+                  bankId: p.bankId,
                   fileNames:
                       p.fileNames.where((n) => n != fileName).toList(),
                 ))
@@ -684,8 +744,13 @@ class _FileListScreenState extends State<FileListScreen>
           (k, v) => MapEntry(k, v.where((n) => n != fileName).toList()),
         );
       });
-      await PrefService.savePlaylists(_activeBank, _playlists);
-      await PrefService.savePlayed(_activeBank, _playedByPlaylist);
+      if (_activeBankId != null) {
+      await PrefService.savePlaylistsForBank(_activeBankId!, _playlists);
+    }
+      if (_activeBankId != null) {
+        await PrefService.savePlayedForBank(
+            _activeBankId!, _playedByPlaylist);
+      }
 
       if (_folderPath != null) {
         await _scanFolder(Directory(_folderPath!));
@@ -700,13 +765,50 @@ class _FileListScreenState extends State<FileListScreen>
     }
   }
 
-  void _startNewPlaylist() {
+  /// Tworzy nową listę — przypisaną do AKTYWNEGO banku.
+  /// Nie pyta o bank — bank aktywny jest źródłem.
+  /// Generuje nazwę `listN` i wchodzi w tryb budowania.
+  Future<void> _startNewPlaylist() async {
+    final bank = _activeBank;
+    if (bank == null || !mounted) return;
+
+    // Wygeneruj nazwę `listN` — unikalną w skali apki.
+    int n = 1;
+    while (true) {
+      final candidate = 'list$n';
+      bool taken = false;
+      for (final b in _banks) {
+        final pls = await PrefService.loadPlaylistsForBank(b.id);
+        if (pls.any((p) => p.name == candidate)) {
+          taken = true;
+          break;
+        }
+      }
+      if (!taken) break;
+      n++;
+    }
+    final listName = 'list$n';
+
+    final newList = Playlist(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      name: listName,
+      bankId: bank.id,
+      fileNames: [],
+    );
+
+    // Zapisz listę do aktywnego banku.
+    final existing = await PrefService.loadPlaylistsForBank(bank.id);
+    existing.add(newList);
+    await PrefService.savePlaylistsForBank(bank.id, existing);
+
+    // Wejdź w tryb budowania tej listy.
     setState(() {
       _buildMode = true;
-      _editingPlaylist = null;
+      _editingPlaylist = newList;
       _selectedFileNames = [];
-      _playlistNameController.text = '';
+      _playlistNameController.text = listName;
       _activePlaylistId = null;
+      _playlists = [..._playlists, newList];
       _applyFilter();
     });
   }
@@ -733,11 +835,64 @@ class _FileListScreenState extends State<FileListScreen>
     });
   }
 
+  /// Usuwa plik z zaznaczonych (long-press w _editMode).
+  Future<void> _removeFromSelection(File file) async {
+    final name = file.path.split('/').last;
+    final plId = _activePlaylistId;
+    if (plId == null) return;
+    setState(() {
+      _selectedFileNames.remove(name);
+      final idx = _playlists.indexWhere((p) => p.id == plId);
+      if (idx >= 0) {
+        final pl = _playlists[idx];
+        _playlists[idx] = Playlist(
+          id: pl.id,
+          name: pl.name,
+          bankId: pl.bankId,
+          fileNames: pl.fileNames.where((n) => n != name).toList(),
+        );
+      }
+    });
+    if (_activeBankId != null) {
+      await PrefService.savePlaylistsForBank(_activeBankId!, _playlists);
+    }
+    if (mounted) _applyFilter();
+  }
+
+  /// Przenosi kafelek w playliście z pozycji [from] na [to].
+  Future<void> _moveInPlaylist(int from, int to) async {
+    final plId = _activePlaylistId;
+    if (plId == null) return;
+    setState(() {
+      final idx = _playlists.indexWhere((p) => p.id == plId);
+      if (idx < 0) return;
+      final pl = _playlists[idx];
+      final list = List<String>.from(pl.fileNames);
+      if (from < 0 || from >= list.length) return;
+      if (to < 0 || to > list.length) return;
+      final item = list.removeAt(from);
+      list.insert(to > from ? to - 1 : to, item);
+      _playlists[idx] = Playlist(
+        id: pl.id,
+        name: pl.name,
+        bankId: pl.bankId,
+        fileNames: list,
+      );
+    });
+    if (_activeBankId != null) {
+      await PrefService.savePlaylistsForBank(_activeBankId!, _playlists);
+    }
+    if (mounted) _applyFilter();
+  }
+
   Future<void> _saveBuildPlaylist() async {
-    final name = _playlistNameController.text.trim();
+    // Nazwa pochodzi z _editingPlaylist (lista ma już nazwę list1/list2/...).
+    // Nie ma pola tekstowego — user nie wpisuje nazwy.
+    final name =
+        _editingPlaylist?.name ?? _playlistNameController.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Podaj nazwę playlisty')),
+        const SnackBar(content: Text('Brak nazwy playlisty')),
       );
       return;
     }
@@ -754,6 +909,7 @@ class _FileListScreenState extends State<FileListScreen>
           _playlists[idx] = Playlist(
             id: _editingPlaylist!.id,
             name: name,
+            bankId: _editingPlaylist!.bankId,
             fileNames: List.from(_selectedFileNames),
           );
         }
@@ -761,11 +917,14 @@ class _FileListScreenState extends State<FileListScreen>
         _playlists.add(Playlist(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           name: name,
+          bankId: _activeBankId ?? '',
           fileNames: List.from(_selectedFileNames),
         ));
       }
     });
-    await PrefService.savePlaylists(_activeBank, _playlists);
+    if (_activeBankId != null) {
+      await PrefService.savePlaylistsForBank(_activeBankId!, _playlists);
+    }
     if (!mounted) return;
     setState(() {
       _buildMode = false;
@@ -776,19 +935,22 @@ class _FileListScreenState extends State<FileListScreen>
     });
   }
 
-  void _cancelBuild() {
-    setState(() {
-      _buildMode = false;
-      _editingPlaylist = null;
-      _selectedFileNames = [];
-      _playlistNameController.text = '';
-    });
-  }
-
   void _openPlaylist(Playlist pl) {
     setState(() {
-      _activePlaylistId = pl.id;
       _searchController.clear();
+      // Pusta lista → od razu tryb budowania (zaznaczanie kafelków).
+      if (pl.fileNames.isEmpty) {
+        _activePlaylistId = null;
+        _buildMode = true;
+        _editingPlaylist = pl;
+        _selectedFileNames = [];
+        _playlistNameController.text = pl.name;
+        _editMode = false;
+      } else {
+        // Niepusta lista → widok playlisty.
+        _activePlaylistId = pl.id;
+        _editMode = false;
+      }
       _applyFilter();
     });
   }
@@ -796,6 +958,7 @@ class _FileListScreenState extends State<FileListScreen>
   void _closePlaylist() {
     setState(() {
       _activePlaylistId = null;
+      _editMode = false;
       _applyFilter();
     });
   }
@@ -828,6 +991,21 @@ class _FileListScreenState extends State<FileListScreen>
               onTap: () => Navigator.pop(ctx, 'edit'),
             ),
             ListTile(
+              leading: const Icon(Icons.swap_vert),
+              title: const Text('Zmień kolejność plików'),
+              onTap: () => Navigator.pop(ctx, 'reorder'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: const Text('Zmień nazwę'),
+              onTap: () => Navigator.pop(ctx, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf),
+              title: const Text('Wygeneruj PDF'),
+              onTap: () => Navigator.pop(ctx, 'pdf'),
+            ),
+            ListTile(
               leading: const Icon(Icons.cleaning_services),
               title: const Text('Wyczyść oznaczenia'),
               onTap: () => Navigator.pop(ctx, 'clear'),
@@ -845,37 +1023,82 @@ class _FileListScreenState extends State<FileListScreen>
       ),
     );
     if (!mounted) return;
-    if (action == 'open') _openPlaylist(pl);
-    if (action == 'edit') _startEditPlaylist(pl);
-    if (action == 'clear') await _clearPlayed(pl.id);
-    if (action == 'delete') await _deletePlaylist(pl);
+    if (action == 'open') {
+      _openPlaylist(pl);
+    } else if (action == 'edit') {
+      _startEditPlaylist(pl);
+    } else if (action == 'rename') {
+      await _renamePlaylist(pl);
+    } else if (action == 'pdf') {
+      await _generatePlaylistPdf(pl);
+    } else if (action == 'reorder') {
+      setState(() {
+        _activePlaylistId = pl.id;
+        _editMode = true;
+        _searchController.clear();
+        _applyFilter();
+      });
+    } else if (action == 'clear') {
+      await _clearPlayed(pl.id);
+    } else if (action == 'delete') {
+      await _deletePlaylist(pl);
+    }
   }
 
   Future<void> _clearPlayed(String key) async {
     setState(() => _playedByPlaylist[key] = []);
-    await PrefService.savePlayed(_activeBank, _playedByPlaylist);
+    if (_activeBankId != null) {
+      await PrefService.savePlayedForBank(
+          _activeBankId!, _playedByPlaylist);
+    }
   }
 
-  Future<void> _clearCurrentPlayed() async {
-    final confirm = await showDialog<bool>(
+  /// Zmienia nazwę playlisty (przez dialog).
+  Future<void> _renamePlaylist(Playlist pl) async {
+    final ctrl = TextEditingController(text: pl.name);
+    final newName = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Wyczyścić oznaczenia?'),
-        content: const Text(
-            'Wszystkie piaskowe kafelki wrócą do niebieskiego.'),
+        title: const Text('Zmień nazwę playlisty'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Nowa nazwa'),
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Anuluj'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Wyczyść'),
+            onPressed: () {
+              final n = ctrl.text.trim();
+              if (n.isEmpty) return;
+              Navigator.pop(ctx, n);
+            },
+            child: const Text('Zmień'),
           ),
         ],
       ),
     );
-    if (confirm == true) await _clearPlayed(_currentPlayedKey);
+    if (newName == null || newName.isEmpty) return;
+    if (newName == pl.name) return;
+
+    setState(() {
+      final idx = _playlists.indexWhere((p) => p.id == pl.id);
+      if (idx >= 0) {
+        _playlists[idx] = Playlist(
+          id: pl.id,
+          name: newName,
+          bankId: pl.bankId,
+          fileNames: List.from(pl.fileNames),
+        );
+      }
+    });
+    if (_activeBankId != null) {
+      await PrefService.savePlaylistsForBank(_activeBankId!, _playlists);
+    }
+    if (mounted) _applyFilter();
   }
 
   Future<void> _deletePlaylist(Playlist pl) async {
@@ -905,9 +1128,23 @@ class _FileListScreenState extends State<FileListScreen>
         _playedByPlaylist.remove(pl.id);
         if (_activePlaylistId == pl.id) _activePlaylistId = null;
       });
-      await PrefService.savePlaylists(_activeBank, _playlists);
-      await PrefService.savePlayed(_activeBank, _playedByPlaylist);
+      if (_activeBankId != null) {
+      await PrefService.savePlaylistsForBank(_activeBankId!, _playlists);
     }
+      if (_activeBankId != null) {
+        await PrefService.savePlayedForBank(
+            _activeBankId!, _playedByPlaylist);
+      }
+    }
+  }
+
+  /// Czy aktywna playlista ma oznaczenia (piaskowe kafelki).
+  bool get _hasPlayedInCurrent =>
+      (_playedByPlaylist[_currentPlayedKey] ?? []).isNotEmpty;
+
+  /// Czyści oznaczenia dla aktywnej playlisty (lub wszystkich).
+  Future<void> _clearCurrentPlayed() async {
+    await _clearPlayed(_currentPlayedKey);
   }
 
   int? _selectionOrder(String fileName) {
@@ -918,15 +1155,17 @@ class _FileListScreenState extends State<FileListScreen>
   bool _isPlayed(String fileName) =>
       (_playedByPlaylist[_currentPlayedKey] ?? []).contains(fileName);
 
-  bool get _hasPlayedInCurrent =>
-      (_playedByPlaylist[_currentPlayedKey] ?? []).isNotEmpty;
-
   @override
   Widget build(BuildContext context) {
     final activePlaylist = _activePlaylistId != null
         ? _playlists.firstWhere(
             (p) => p.id == _activePlaylistId,
-            orElse: () => Playlist(id: '', name: '', fileNames: []),
+            orElse: () => Playlist(
+          id: '',
+          name: '',
+          bankId: '',
+          fileNames: [],
+        ),
           )
         : null;
 
@@ -938,52 +1177,119 @@ class _FileListScreenState extends State<FileListScreen>
                 ? _buildNoFolderView()
                 : _files.isEmpty
                     ? _buildEmptyView()
-                    : Column(
+                    : Stack(
                         children: [
-                          _buildTopBar(activePlaylist),
-                          _buildBankBar(),
-                          if (_searchOpen) _buildSearchField(),
-                          Expanded(
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                final isLandscape = constraints.maxWidth >
-                                    constraints.maxHeight;
-                                final cols = isLandscape ? 4 : 2;
-                                return GridView.builder(
-                                  padding: const EdgeInsets.all(4),
-                                  gridDelegate:
-                                      SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: cols,
-                                    crossAxisSpacing: 6,
-                                    mainAxisSpacing: 4,
-                                    childAspectRatio:
-                                        isLandscape ? 4.3 : 5.9,
-                                  ),
-                                  itemCount: _filteredFiles.length,
-                                  itemBuilder: (context, index) {
-                                    final file = _filteredFiles[index];
-                                    final fileName =
-                                        file.path.split('/').last;
-                                    return PdfTile(
-                                      fileName: fileName,
-                                      played: _isPlayed(fileName),
-                                      buildMode: _buildMode,
-                                      orderNumber: _selectionOrder(fileName),
-                                      onTap: () {
-                                        if (_buildMode) {
-                                          _toggleSelection(file);
-                                        } else {
-                                          _openPdf(file, index: index);
-                                        }
-                                      },
-                                      onLongPress: () => _deleteFile(file),
-                                    );
-                                  },
-                                );
+                          // Kafelki — na WIERZCHU (scroll się tu dzieje).
+                          Positioned.fill(
+                            child:
+                                NotificationListener<ScrollNotification>(
+                              onNotification: (n) {
+                                if (n is ScrollUpdateNotification) {
+                                  final offset = n.metrics.pixels;
+                                  if (offset > 0 && _barsVisible) {
+                                    setState(() => _barsVisible = false);
+                                  } else if (offset == 0 && !_barsVisible) {
+                                    setState(() => _barsVisible = true);
+                                  }
+                                }
+                                return false;
                               },
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final isLandscape =
+                                      constraints.maxWidth >
+                                          constraints.maxHeight;
+                                  final cols = isLandscape ? 4 : 2;
+                                  // 16 wierszy w pionie, 8 w poziomie.
+                                  final rows = isLandscape ? 8 : 16;
+                                  // Wysokość kafelka z DOSTĘPNEJ wysokości
+                                  // grida (po odjęciu pasków 2 * tileH).
+                                  final tileH =
+                                      constraints.maxHeight / (rows + 2);
+                                  // Wysokość pasków (topBar 96 + bankBar 96
+                                  // w widoku banku; w widoku playlisty tylko
+                                  // topBar 96).
+                                  final barsHeight =
+                                      _activePlaylistId == null ? 200.0 : 96.0;
+                                  return GridView.builder(
+                                    padding: EdgeInsets.only(
+                                      left: 4,
+                                      right: 4,
+                                      bottom: 4,
+                                      top: _barsVisible
+                                          ? barsHeight + 6
+                                          : 6,
+                                    ),
+                                    gridDelegate:
+                                        SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: cols,
+                                      crossAxisSpacing: 6,
+                                      mainAxisSpacing: 4,
+                                      mainAxisExtent: tileH,
+                                    ),
+                                    itemCount: _filteredFiles.length,
+                                    itemBuilder: (context, index) {
+                                      final file = _filteredFiles[index];
+                                      final fileName =
+                                          file.path.split('/').last;
+                                      return PdfTile(
+                                        fileName: fileName,
+                                        played: _isPlayed(fileName),
+                                        buildMode: _buildMode,
+                                        orderNumber:
+                                            _selectionOrder(fileName),
+                                        tileHeight: tileH,
+                                        editMode: _editMode,
+                                        index: index,
+                                        position:
+                                            _editMode ? index + 1 : null,
+                                        onMove: _moveInPlaylist,
+                                        onTap: () {
+                                          if (_buildMode) {
+                                            _toggleSelection(file);
+                                          } else if (_editMode) {
+                                            // w edycji: nic
+                                          } else {
+                                            _openPdf(file, index: index);
+                                          }
+                                        },
+                                        onLongPress: () {
+                                          if (_editMode) {
+                                            _removeFromSelection(file);
+                                          } else if (_activePlaylistId !=
+                                              null) {
+                                            // długie w playliście — nic
+                                          } else {
+                                            _deleteFile(file);
+                                          }
+                                        },
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
                             ),
                           ),
-                          if (_buildMode) _buildBuildBar(),
+                          // Paski — na SPODZIE (animowane).
+                          AnimatedPositioned(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOut,
+                            top: _barsVisible
+                                ? 0
+                                : -(_activePlaylistId == null
+                                    ? 200.0
+                                    : 96.0),
+                            left: 0,
+                            right: 0,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildTopBar(activePlaylist),
+                                if (_activePlaylistId == null) _buildBankBar(),
+                                if (_searchOpen) _buildSearchField(),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
       ),
@@ -1011,10 +1317,13 @@ class _FileListScreenState extends State<FileListScreen>
             icon: const Icon(Icons.add),
             label: const Text('Dodaj pliki'),
           ),
-          if (_previousBank != null) ...[
+          if (_previousBankId != null) ...[
             const SizedBox(height: 24),
             TextButton.icon(
-              onPressed: () => _switchBank(_previousBank!),
+              onPressed: () => _switchBank(_banks.firstWhere(
+                  (b) => b.id == _previousBankId,
+                  orElse: () => _banks.first,
+                )),
               icon: const Icon(Icons.arrow_back, color: Colors.redAccent),
               label: const Text('Wroc do poprzedniego banku',
                   style: TextStyle(color: Colors.redAccent, fontSize: 16)),
@@ -1042,10 +1351,13 @@ class _FileListScreenState extends State<FileListScreen>
             onPressed: _importPdfs,
             child: const Text('Zmień folder'),
           ),
-          if (_previousBank != null) ...[
+          if (_previousBankId != null) ...[
             const SizedBox(height: 24),
             TextButton.icon(
-              onPressed: () => _switchBank(_previousBank!),
+              onPressed: () => _switchBank(_banks.firstWhere(
+                  (b) => b.id == _previousBankId,
+                  orElse: () => _banks.first,
+                )),
               icon: const Icon(Icons.arrow_back, color: Colors.redAccent),
               label: const Text('Wroc do poprzedniego banku',
                   style: TextStyle(color: Colors.redAccent, fontSize: 16)),
@@ -1081,104 +1393,148 @@ class _FileListScreenState extends State<FileListScreen>
 
   /// Poziomy pasek z bankami (chipsy) + przycisk dodania nowego.
   Widget _buildBankBar() {
-    debugPrint('DEBUG _buildBankBar: _banks=$_banks, _activeBank=$_activeBank');
     return Container(
       height: 96,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       color: AppColors.topBar.withValues(alpha: 0.85),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _banks.length + 1,
-        itemBuilder: (context, index) {
-          // Ostatni element — przycisk "Nowy bank"
-          if (index == _banks.length) {
-            return Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: ActionChip(
-                avatar: const Icon(Icons.add, size: 32),
-                label: const Text('Nowy', style: TextStyle(fontSize: 22)),
-                onPressed: _askForNewBank,
-              ),
-            );
-          }
-          final bank = _banks[index];
-          final active = bank == _activeBank;
-          return Padding(
-            key: ValueKey('bank_$bank'),   // ← KLUCZ dla ListView (bez indexu!)
-            padding: const EdgeInsets.only(right: 6),
-            child: GestureDetector(
-              onLongPress: () => _showBankMenu(bank),
-              child: ChoiceChip(
-                key: ValueKey('chip_$bank'),       // ← KLUCZ dla chipa
-                label: Text(bank, style: const TextStyle(fontSize: 22)),
-                selected: active,
-                onSelected: (_) => _switchBank(bank),
-              ),
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _banks.length + 1,
+              itemBuilder: (context, index) {
+                // Pierwszy element — chip "+" (nowy bank).
+                if (index == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      label: const Text('+',
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold)),
+                      tooltip: 'Nowy bank',
+                      onPressed: _askForNewBank,
+                    ),
+                  );
+                }
+                final bank = _banks[index - 1];
+                final active = bank.id == _activeBankId;
+                return Padding(
+                  key: ValueKey('bank_${bank.id}'),
+                  padding: const EdgeInsets.only(right: 6),
+                  child: GestureDetector(
+                    onLongPress: () => _showBankMenu(bank),
+                    child: ChoiceChip(
+                      key: ValueKey('chip_${bank.id}'),
+                      label: Text(bank.name,
+                          style: const TextStyle(fontSize: 22)),
+                      selected: active,
+                      onSelected: (_) => _switchBank(bank),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+          // Licznik plików.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Text(
+              '${_filteredFiles.length}',
+              style: const TextStyle(
+                  color: Colors.white70, fontSize: 22),
+            ),
+          ),
+          // Miotełka — czyść oznaczenia (tylko gdy są oznaczenia).
+          if (_hasPlayedInCurrent)
+            IconButton(
+              icon: const Icon(
+                Icons.cleaning_services,
+                color: Colors.white,
+                size: 32,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              tooltip: 'Czyść oznaczenia',
+              onPressed: _clearCurrentPlayed,
+            ),
+          // Lupka (szukaj).
+          IconButton(
+            icon: Icon(
+              _searchOpen ? Icons.search_off : Icons.search,
+              color: Colors.white,
+              size: 32,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            tooltip: 'Szukaj',
+            onPressed: () =>
+                setState(() => _searchOpen = !_searchOpen),
+          ),
+        ],
       ),
     );
   }
 
   /// Dialog: tworzy nowy bank (katalog) i przełącza na niego.
+  /// Nowy bank — bez dialogu, od razu SAF (wybór folderu).
+  /// Nazwa banku = nazwa wybranego folderu (z kolizją `folder (2)`).
   Future<void> _askForNewBank() async {
-    final ctrl = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Nowy bank'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'np. szanty, kapela1, kapela inni',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Anuluj'),
-          ),
-          TextButton(
-            onPressed: () {
-              final n = ctrl.text.trim();
-              if (n.isEmpty) return;
-              Navigator.pop(ctx, n);
-            },
-            child: const Text('Utwórz'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.isEmpty) return;
-
-    if (_banks.contains(name)) {
+    // 1) Wybierz folder przez SAF.
+    SafDocumentFile? dir;
+    try {
+      dir = await _saf.pickDirectory();
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bank "$name" już istnieje')),
+        SnackBar(content: Text('Błąd wyboru folderu: $e')),
       );
-      await _switchBank(name);
+      return;
+    }
+    if (dir == null) return;
+
+    // 2) Nazwa banku = nazwa folderu.
+    final rawName = dir.name.trim();
+    if (rawName.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Folder bez nazwy')),
+      );
       return;
     }
 
+    // 3) Kolizja nazw — dopisz (2), (3), ...
+    var bankName = rawName;
+    var counter = 2;
+    while (_banks.any((b) => b.name == bankName)) {
+      bankName = '$rawName ($counter)';
+      counter++;
+    }
+
+    // 4) Nowy Bank + zapis URI + katalog lokalny.
+    final newBank = Bank(id: Bank.newId(), name: bankName);
     setState(() {
-      _banks.add(name);
+      _banks.add(newBank);
     });
     await PrefService.saveBanks(_banks);
 
-    // Utwórz katalog
-    final docs = await _defaultAppDir(); // używamy katalogu aktywnego banku
-    final newDir = Directory('${docs.parent.path}/$name');
+    _bankUris[newBank.id] = dir.uri;
+    await PrefService.saveBankUris(_bankUris);
+
+    final docs = await _defaultAppDir();
+    final newDir = Directory('${docs.parent.path}/$bankName');
     if (!await newDir.exists()) {
       await newDir.create(recursive: true);
     }
 
-    await _switchBank(name);
+    // 5) Przełącz na nowy bank i skopiuj pliki z Dysku.
+    await _switchBank(newBank);
+    await _refreshFromBankUri(newBank);
   }
 
   /// Menu banku po długim przytrzymaniu chipa.
-  Future<void> _showBankMenu(String bank) async {
+  Future<void> _showBankMenu(Bank bank) async {
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -1189,7 +1545,7 @@ class _FileListScreenState extends State<FileListScreen>
             Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Bank: $bank',
+                'Bank: ${bank.name}',
                 style: const TextStyle(
                     fontSize: 18, fontWeight: FontWeight.bold),
               ),
@@ -1208,40 +1564,46 @@ class _FileListScreenState extends State<FileListScreen>
             const Divider(height: 1),
             ListTile(
               leading: Icon(
-                _bankUris[bank] == null
+                _bankUris[bank.id] == null
                     ? Icons.folder_open
                     : Icons.cloud_done,
-                color: _bankUris[bank] == null ? null : Colors.green,
+                color: _bankUris[bank.id] == null ? null : Colors.green,
               ),
               title: Text(
-                _bankUris[bank] == null
+                _bankUris[bank.id] == null
                     ? 'Wskaż folder źródłowy (Dysk Google)'
                     : 'Zmień folder źródłowy',
               ),
-              subtitle: _bankUris[bank] == null
+              subtitle: _bankUris[bank.id] == null
                   ? null
-                  : Text(
+                  : const Text(
                       'Folder wskazany',
-                      style: const TextStyle(fontSize: 12),
+                      style: TextStyle(fontSize: 12),
                     ),
               onTap: () => Navigator.pop(ctx, 'set_uri'),
             ),
-            if (_bankUris[bank] != null)
+            if (_bankUris[bank.id] != null)
               ListTile(
                 leading: const Icon(Icons.refresh),
-                title: const Text('Odśwież z Dysku Google'),
+                title: const Text('Odśwież z Dysk Google'),
                 subtitle: const Text(
                   'Pobierz nowe pliki, pomiń istniejące',
                   style: TextStyle(fontSize: 12),
                 ),
                 onTap: () => Navigator.pop(ctx, 'refresh'),
               ),
-            if (_bankUris[bank] != null)
+            if (_bankUris[bank.id] != null)
               ListTile(
                 leading: const Icon(Icons.link_off),
                 title: const Text('Usuń folder źródłowy'),
                 onTap: () => Navigator.pop(ctx, 'clear_uri'),
               ),
+            ListTile(
+              leading: const Icon(Icons.delete_sweep,
+                  color: Colors.redAccent),
+              title: const Text('Usuń wszystkie pliki'),
+              onTap: () => Navigator.pop(ctx, 'delete_all'),
+            ),
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
@@ -1266,14 +1628,17 @@ class _FileListScreenState extends State<FileListScreen>
       await _refreshFromBankUri(bank);
     } else if (action == 'clear_uri') {
       await _clearBankUri(bank);
+    } else if (action == 'delete_all') {
+      await _deleteAllFiles();
     } else if (action == 'delete') {
       await _deleteBank(bank);
     }
   }
 
-  /// Zmienia nazwę banku: katalog na dysku + klucz w PrefService.
-  Future<void> _renameBank(String oldName) async {
-    final ctrl = TextEditingController(text: oldName);
+  /// Zmienia nazwę banku: katalog na dysku + nazwę w modelu Bank.
+  /// `id` banku NIE zmienia się — więc playlisty (po bankId) zostają.
+  Future<void> _renameBank(Bank bank) async {
+    final ctrl = TextEditingController(text: bank.name);
     final newName = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1300,9 +1665,9 @@ class _FileListScreenState extends State<FileListScreen>
       ),
     );
     if (newName == null || newName.isEmpty) return;
-    if (newName == oldName) return;
+    if (newName == bank.name) return;
 
-    if (_banks.contains(newName)) {
+    if (_banks.any((b) => b.name == newName)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Bank "$newName" już istnieje')),
@@ -1313,7 +1678,7 @@ class _FileListScreenState extends State<FileListScreen>
     // 1) Zmień nazwę katalogu
     try {
       final currentDir = await _defaultAppDir();
-      final oldDir = Directory('${currentDir.parent.path}/$oldName');
+      final oldDir = Directory('${currentDir.parent.path}/${bank.name}');
       final newDir = Directory('${currentDir.parent.path}/$newName');
       if (await oldDir.exists()) {
         if (await newDir.exists()) {
@@ -1333,40 +1698,15 @@ class _FileListScreenState extends State<FileListScreen>
       return;
     }
 
-    // 2) Przenieś playlisty i oznaczenia pod nowy klucz
-    try {
-      final prefs = await PrefService.loadPlaylists(oldName);
-      final played = await PrefService.loadPlayed(oldName);
-      await PrefService.savePlaylists(newName, prefs);
-      await PrefService.savePlayed(newName, played);
-      await PrefService.clearBankData(oldName);
-    } catch (e) {
-      debugPrint('Błąd przenoszenia danych banku: $e');
-    }
-
-    // 3) Przenieś URI (jeśli był ustawiony)
-    final uri = _bankUris[oldName];
-    if (uri != null) {
-      _bankUris.remove(oldName);
-      _bankUris[newName] = uri;
-      await PrefService.saveBankUris(_bankUris);
-    }
-
-    // 4) Zaktualizuj listę banków
+    // 2) Zaktualizuj bank w pamięci (id zostaje)
     setState(() {
-      final idx = _banks.indexOf(oldName);
-      if (idx >= 0) _banks[idx] = newName;
+      final idx = _banks.indexWhere((b) => b.id == bank.id);
+      if (idx >= 0) _banks[idx] = bank.copyWith(name: newName);
     });
     await PrefService.saveBanks(_banks);
 
-    // 5) Jeśli zmieniono aktywny bank — ustaw nową nazwę i przeładuj
-    if (_activeBank == oldName) {
-      setState(() {
-        _activeBank = newName;
-      });
-      await PrefService.saveActiveBank(newName);
-      _playlists = await PrefService.loadPlaylists(newName);
-      _playedByPlaylist = await PrefService.loadPlayed(newName);
+    // 3) Jeśli zmieniono aktywny bank — przeładuj
+    if (_activeBankId == bank.id) {
       final dir = await _defaultAppDir();
       _folderPath = dir.path;
       await _scanFolder(dir);
@@ -1374,7 +1714,7 @@ class _FileListScreenState extends State<FileListScreen>
   }
 
   /// Usuwa bank (katalog + playlisty + oznaczenia).
-  Future<void> _deleteBank(String bank) async {
+  Future<void> _deleteBank(Bank bank) async {
     if (_banks.length <= 1) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1385,7 +1725,7 @@ class _FileListScreenState extends State<FileListScreen>
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Usunąć bank "$bank"?'),
+        title: Text('Usunąć bank "${bank.name}"?'),
         content: const Text(
             'Zostaną usunięte wszystkie pliki, playlisty i oznaczenia tego banku.'),
         actions: [
@@ -1405,23 +1745,27 @@ class _FileListScreenState extends State<FileListScreen>
     // Usuń katalog
     try {
       final currentDir = await _defaultAppDir();
-      final bankDir = Directory('${currentDir.parent.path}/$bank');
+      final bankDir = Directory('${currentDir.parent.path}/${bank.name}');
       if (await bankDir.exists()) {
         await bankDir.delete(recursive: true);
       }
     } catch (e) {
-      debugPrint('Błąd usuwania katalogu banku: $e');
     }
 
-    await PrefService.clearBankData(bank);
+    await PrefService.clearBankPlaylists(bank.id);
+    await PrefService.clearBankPlayed(bank.id);
+    _bankUris.remove(bank.id);
+    await PrefService.saveBankUris(_bankUris);
 
     setState(() {
-      _banks.remove(bank);
+      _banks.removeWhere((b) => b.id == bank.id);
     });
     await PrefService.saveBanks(_banks);
 
-    if (bank == _activeBank) {
-      await _switchBank(_banks.first);
+    if (bank.id == _activeBankId) {
+      if (_banks.isNotEmpty) {
+        await _switchBank(_banks.first);
+      }
     }
   }
 
@@ -1432,191 +1776,100 @@ class _FileListScreenState extends State<FileListScreen>
       color: AppColors.topBar,
       child: Row(
         children: [
-          if (_activePlaylistId != null)
-            IconButton(
-              icon: const Icon(Icons.arrow_back,
-                  color: Colors.white, size: 44),
-              padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 64, minHeight: 64),
-              tooltip: 'Wróć',
-              onPressed: _closePlaylist,
-            ),
-          if (_activePlaylistId == null && _playlists.isNotEmpty)
+          if (_activePlaylistId == null)
             Expanded(
-              child: ListView.builder(
+              child: ListView(
                 scrollDirection: Axis.horizontal,
-                itemCount: _playlists.length,
-                itemBuilder: (context, index) {
-                  final pl = _playlists[index];
-                  return Padding(
+                children: [
+                  // Chip "+" — nowa lista (po lewej).
+                  Padding(
                     padding: const EdgeInsets.only(right: 6),
-                    child: GestureDetector(
-                      onLongPress: () => _showPlaylistMenu(pl),
-                      child: ActionChip(
-                        avatar:
-                            const Icon(Icons.queue_music, size: 32),
-                        label: Text(
-                            '${pl.name} (${pl.fileNames.length})',
-                            style: const TextStyle(fontSize: 22)),
-                        onPressed: () => _openPlaylist(pl),
+                    child: ActionChip(
+                      label: const Text('+',
+                          style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold)),
+                      tooltip: 'Nowa lista',
+                      onPressed: _startNewPlaylist,
+                    ),
+                  ),
+                  // Chipy list.
+                  for (final pl in _playlists)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: GestureDetector(
+                        onLongPress: () => _showPlaylistMenu(pl),
+                        child: Builder(builder: (context) {
+                          // Licznik na bieżąco: w trybie budowania tej
+                          // listy pokazujemy liczbę zaznaczonych kafelków.
+                          final isEditing = _buildMode &&
+                              _editingPlaylist?.id == pl.id;
+                          final count = isEditing
+                              ? _selectedFileNames.length
+                              : pl.fileNames.length;
+                          return ActionChip(
+                            label: Text(
+                                '${pl.name} ($count)',
+                                style: const TextStyle(fontSize: 22)),
+                            onPressed: () async {
+                              if (isEditing) {
+                                await _saveBuildPlaylist();
+                                return;
+                              }
+                              _openPlaylist(pl);
+                            },
+                          );
+                        }),
                       ),
                     ),
-                  );
-                },
+                ],
               ),
             )
           else if (_activePlaylistId != null)
             Expanded(
-              child: Text(
-                activePlaylist?.name ?? '',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w600,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  onLongPress: () {
+                    if (activePlaylist != null) {
+                      _showPlaylistMenu(activePlaylist);
+                    }
+                  },
+                  child: ActionChip(
+                    label: Text(
+                      '${activePlaylist?.name ?? ""} (${activePlaylist?.fileNames.length ?? 0})',
+                      style: const TextStyle(fontSize: 22),
+                    ),
+                    onPressed: () {
+                      if (_editMode) {
+                        setState(() {
+                          _editMode = false;
+                          _applyFilter();
+                        });
+                      } else {
+                        _closePlaylist();
+                      }
+                    },
+                  ),
                 ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            )
-          else
-            const Expanded(
-              child: Text(
-                'Teksty',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w600,
-                ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Text(
-              '${_filteredFiles.length}',
-              style:
-                  const TextStyle(color: Colors.white70, fontSize: 22),
-            ),
-          ),
-          IconButton(
-            icon: Icon(
-              _searchOpen ? Icons.search_off : Icons.search,
-              color: Colors.white,
-              size: 44,
-            ),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
-            tooltip: 'Szukaj',
-            onPressed: () =>
-                setState(() => _searchOpen = !_searchOpen),
-          ),
-          if (!_buildMode && _activePlaylistId == null)
+          if (_activePlaylistId != null && _hasPlayedInCurrent && !_editMode)
             IconButton(
-              icon: const Icon(Icons.add, color: Colors.white, size: 44),
+              icon: const Icon(
+                Icons.cleaning_services,
+                color: Colors.white,
+                size: 32,
+              ),
               padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 64, minHeight: 64),
-              tooltip: 'Nowa playlista',
-              onPressed: _startNewPlaylist,
-            ),
-          if (_activePlaylistId != null && !_buildMode)
-            IconButton(
-              icon: const Icon(Icons.edit, color: Colors.white, size: 44),
-              padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 64, minHeight: 64),
-              tooltip: 'Edytuj playlistę',
-              onPressed: () {
-                final pl = _playlists
-                    .firstWhere((p) => p.id == _activePlaylistId);
-                _startEditPlaylist(pl);
-              },
-            ),
-          if (_activePlaylistId != null && !_buildMode)
-            IconButton(
-              icon: const Icon(Icons.picture_as_pdf,
-                  color: Colors.white, size: 44),
-              padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 64, minHeight: 64),
-              tooltip: 'Wygeneruj PDF',
-              onPressed: () {
-                final pl = _playlists
-                    .firstWhere((p) => p.id == _activePlaylistId);
-                _generatePlaylistPdf(pl);
-              },
-            ),
-          if (_hasPlayedInCurrent && !_buildMode)
-            IconButton(
-              icon: const Icon(Icons.cleaning_services,
-                  color: Colors.white, size: 44),
-              padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 64, minHeight: 64),
-              tooltip: 'Czyść listę',
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              tooltip: 'Czyść oznaczenia',
               onPressed: _clearCurrentPlayed,
             ),
-          if (_files.isNotEmpty && !_buildMode)
-            IconButton(
-              icon: const Icon(Icons.delete_sweep,
-                  color: Colors.redAccent, size: 44),
-              padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 64, minHeight: 64),
-              tooltip: 'Usuń wszystko',
-              onPressed: _deleteAllFiles,
-            ),
-          IconButton(
-            icon: const Icon(Icons.folder_open,
-                color: Colors.white, size: 44),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 64, minHeight: 64),
-            tooltip: 'Zmień folder',
-            onPressed: _importPdfs,
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildBuildBar() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      color: Colors.black87,
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _playlistNameController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  hintText: 'Nazwa playlisty',
-                  hintStyle: TextStyle(color: Colors.white54),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white54),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white),
-                  ),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.close, color: Colors.white),
-              onPressed: _cancelBuild,
-              tooltip: 'Anuluj',
-            ),
-            IconButton(
-              icon: const Icon(Icons.save, color: Colors.green),
-              onPressed: _saveBuildPlaylist,
-              tooltip: 'Zapisz',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
 }

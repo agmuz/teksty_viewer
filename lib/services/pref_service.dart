@@ -1,142 +1,151 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/bank.dart';
 import '../models/playlist.dart';
 
 class PrefService {
+  static const _kBanks = 'banks_v2';
+  static const _kActiveBankId = 'active_bank_id_v2';
+  static const _kPlaylists = 'playlists_v2';
+  static const _kPlayed = 'played_v2';
+  static const _kBankUris = 'bank_uris_v2';
+
   // ===== BANKI =====
-  static const _kBanks = 'banks';
-  static const _kActiveBank = 'active_bank';
-
-  /// Domyślne banki przy pierwszym uruchomieniu.
-  static const List<String> defaultBanks = [
-    'bank1',
-    'bank2',
-    'bank3',
-    'bank4',
-    'bank5',
-  ];
-
-  static Future<List<String>> loadBanks() async {
+  static Future<List<Bank>> loadBanks() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kBanks);
     if (raw == null) {
-      // Pierwsze uruchomienie — ustaw domyślne banki
-      await saveBanks(defaultBanks);
-      return List<String>.from(defaultBanks);
+      final bank = Bank(id: Bank.newId(), name: 'bank1');
+      await saveBanks([bank]);
+      await saveActiveBankId(bank.id);
+      final list = Playlist(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: 'list1',
+        bankId: bank.id,
+        fileNames: [],
+      );
+      await savePlaylistsForBank(bank.id, [list]);
+      return [bank];
     }
-    try {
-      final list = jsonDecode(raw) as List;
-      return list.cast<String>();
-    } catch (_) {
-      return List<String>.from(defaultBanks);
-    }
-  }
-
-  static Future<void> saveBanks(List<String> banks) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kBanks, jsonEncode(banks));
-  }
-
-  static Future<String> loadActiveBank() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_kActiveBank) ?? defaultBanks.first;
-  }
-
-  static Future<void> saveActiveBank(String bank) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kActiveBank, bank);
-  }
-
-  // ===== PLAYLISTY (per bank) =====
-  static String _playlistsKey(String bank) => 'playlists_$bank';
-  static String _playedKey(String bank) => 'played_$bank';
-
-  static Future<List<Playlist>> loadPlaylists(String bank) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_playlistsKey(bank));
-    if (raw == null) return [];
     try {
       final list = jsonDecode(raw) as List;
       return list
-          .map((e) => Playlist.fromJson(Map<String, dynamic>.from(e as Map)))
+          .map((e) => Bank.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
     } catch (_) {
       return [];
     }
   }
 
-  static Future<void> savePlaylists(String bank, List<Playlist> playlists) async {
+  static Future<void> saveBanks(List<Bank> banks) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-      _playlistsKey(bank),
-      jsonEncode(playlists.map((p) => p.toJson()).toList()),
+      _kBanks,
+      jsonEncode(banks.map((b) => b.toJson()).toList()),
     );
   }
 
-  static Future<Map<String, List<String>>> loadPlayed(String bank) async {
+  static Future<String?> loadActiveBankId() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_playedKey(bank));
+    return prefs.getString(_kActiveBankId);
+  }
+
+  static Future<void> saveActiveBankId(String bankId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kActiveBankId, bankId);
+  }
+
+  // ===== PLAYLISTY (per bankId) =====
+  static Future<Map<String, List<Playlist>>> _loadAllPlaylists() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kPlaylists);
     if (raw == null) return {};
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
-      return map.map((k, v) => MapEntry(k, (v as List).cast<String>()));
+      return map.map((k, v) => MapEntry(
+            k,
+            (v as List)
+                .map((e) =>
+                    Playlist.fromJson(Map<String, dynamic>.from(e as Map)))
+                .toList(),
+          ));
     } catch (_) {
       return {};
     }
   }
 
-  static Future<void> savePlayed(String bank, Map<String, List<String>> played) async {
+  static Future<void> _saveAllPlaylists(
+      Map<String, List<Playlist>> all) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_playedKey(bank), jsonEncode(played));
+    await prefs.setString(
+      _kPlaylists,
+      jsonEncode(all.map((k, v) =>
+          MapEntry(k, v.map((p) => p.toJson()).toList()))),
+    );
   }
 
-  /// Usuwa playlisty i oznaczenia danego banku.
-  static Future<void> clearBankData(String bank) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_playlistsKey(bank));
-    await prefs.remove(_playedKey(bank));
+  static Future<List<Playlist>> loadPlaylistsForBank(String bankId) async {
+    final all = await _loadAllPlaylists();
+    return all[bankId] ?? [];
   }
 
-  // ===== STARE KLUCZE (migracja) =====
-  static const _kOldPlaylists = 'playlists';
-  static const _kOldPlayed = 'played';
-  static const _kOldFolderPath = 'teksty_folder_path';
+  static Future<void> savePlaylistsForBank(
+      String bankId, List<Playlist> playlists) async {
+    final all = await _loadAllPlaylists();
+    all[bankId] = playlists;
+    await _saveAllPlaylists(all);
+  }
 
-  /// Migracja ze starych kluczy (bez banku) do banku "kapela1".
-  /// Wywołaj raz przy starcie.
-  static Future<void> migrateIfNeeded() async {
+  static Future<void> clearBankPlaylists(String bankId) async {
+    final all = await _loadAllPlaylists();
+    all.remove(bankId);
+    await _saveAllPlaylists(all);
+  }
+
+  // ===== OZNACZENIA (per bankId) =====
+  static Future<Map<String, Map<String, List<String>>>> _loadAllPlayed() async {
     final prefs = await SharedPreferences.getInstance();
-    final migrated = prefs.getBool('migrated_to_banks') ?? false;
-    if (migrated) return;
-
-    final oldPl = prefs.getString(_kOldPlaylists);
-    final oldPlayed = prefs.getString(_kOldPlayed);
-    if (oldPl != null) {
-      await prefs.setString('playlists_kapela1', oldPl);
-      await prefs.remove(_kOldPlaylists);
+    final raw = prefs.getString(_kPlayed);
+    if (raw == null) return {};
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return map.map((k, v) => MapEntry(
+            k,
+            (v as Map<String, dynamic>).map(
+              (k2, v2) => MapEntry(k2, (v2 as List).cast<String>()),
+            ),
+          ));
+    } catch (_) {
+      return {};
     }
-    if (oldPlayed != null) {
-      await prefs.setString('played_kapela1', oldPlayed);
-      await prefs.remove(_kOldPlayed);
-    }
-    await prefs.setBool('migrated_to_banks', true);
   }
 
-  // ===== FOLDER (już nieużywane do trzymania ścieżki, ale zostawiamy) =====
-  static Future<String?> loadFolderPath() async {
+  static Future<void> _saveAllPlayed(
+      Map<String, Map<String, List<String>>> all) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_kOldFolderPath);
+    await prefs.setString(_kPlayed, jsonEncode(all));
   }
 
-  static Future<void> saveFolderPath(String path) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kOldFolderPath, path);
+  static Future<Map<String, List<String>>> loadPlayedForBank(
+      String bankId) async {
+    final all = await _loadAllPlayed();
+    return all[bankId] ?? {};
   }
 
-  // ===== URI BANKÓW (SAF - Dysk Google) =====
-  static const _kBankUris = 'bank_uris';
+  static Future<void> savePlayedForBank(
+      String bankId, Map<String, List<String>> played) async {
+    final all = await _loadAllPlayed();
+    all[bankId] = played;
+    await _saveAllPlayed(all);
+  }
 
-  /// Zwraca mapę bank -> URI folderu na Dysku Google.
+  static Future<void> clearBankPlayed(String bankId) async {
+    final all = await _loadAllPlayed();
+    all.remove(bankId);
+    await _saveAllPlayed(all);
+  }
+
+  // ===== URI BANKÓW (SAF) =====
   static Future<Map<String, String>> loadBankUris() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kBankUris);
@@ -154,20 +163,34 @@ class PrefService {
     await prefs.setString(_kBankUris, jsonEncode(uris));
   }
 
-  /// Zwraca URI folderu dla danego banku (albo null jeśli nie ustawiono).
-  static Future<String?> loadBankUri(String bank) async {
-    final uris = await loadBankUris();
-    return uris[bank];
-  }
+  // ===== RESET STARYCH DANYCH =====
+  static Future<void> resetOldData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final reset = prefs.getBool('reset_v2_done') ?? false;
+    if (reset) return;
 
-  static Future<void> saveBankUri(String bank, String? uri) async {
-    final uris = await loadBankUris();
-    if (uri == null || uri.isEmpty) {
-      uris.remove(bank);
-    } else {
-      uris[bank] = uri;
+    const oldKeys = [
+      'banks',
+      'active_bank',
+      'playlists',
+      'played',
+      'bank_uris',
+      'teksty_folder_path',
+      'migrated_to_banks',
+    ];
+    for (final k in oldKeys) {
+      await prefs.remove(k);
     }
-    await saveBankUris(uris);
-  }
+    final keys = prefs.getKeys();
+    for (final k in keys) {
+      if (k.startsWith('playlists_') && !k.endsWith('_v2')) {
+        await prefs.remove(k);
+      }
+      if (k.startsWith('played_') && !k.endsWith('_v2')) {
+        await prefs.remove(k);
+      }
+    }
 
+    await prefs.setBool('reset_v2_done', true);
+  }
 }

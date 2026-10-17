@@ -6,10 +6,7 @@ import 'utils/colors.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // Wymuś klasyczny układ z paskiem statusu i nawigacji NAD treścią
-  SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.manual,
-    overlays: SystemUiOverlay.values,
-  );
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Color(0xFF132845),
     statusBarIconBrightness: Brightness.light,
