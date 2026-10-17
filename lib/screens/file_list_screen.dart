@@ -927,10 +927,15 @@ class _FileListScreenState extends State<FileListScreen>
     }
     if (!mounted) return;
     setState(() {
+      final wasEditing = _editingPlaylist;
       _buildMode = false;
       _editingPlaylist = null;
       _selectedFileNames = [];
       _playlistNameController.text = '';
+      // Po zapisie — wejdź do widoku playlisty (nie do banku).
+      if (wasEditing != null) {
+        _activePlaylistId = wasEditing.id;
+      }
       _applyFilter();
     });
   }
@@ -1404,15 +1409,17 @@ class _FileListScreenState extends State<FileListScreen>
               scrollDirection: Axis.horizontal,
               itemCount: _banks.length + 1,
               itemBuilder: (context, index) {
-                // Pierwszy element — chip "+" (nowy bank).
+                // Pierwszy element — chip "+ Banki" (nowy bank).
                 if (index == 0) {
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ActionChip(
-                      label: const Text('+',
+                      label: const Text('+ Banki',
                           style: TextStyle(
                               fontSize: 22,
-                              fontWeight: FontWeight.bold)),
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black)),
+                      backgroundColor: AppColors.tilePlayed,
                       tooltip: 'Nowy bank',
                       onPressed: _askForNewBank,
                     ),
@@ -1781,14 +1788,16 @@ class _FileListScreenState extends State<FileListScreen>
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  // Chip "+" — nowa lista (po lewej).
+                  // Chip "+ Listy" — nowa lista (po lewej).
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ActionChip(
-                      label: const Text('+',
+                      label: const Text('+ Listy',
                           style: TextStyle(
                               fontSize: 22,
-                              fontWeight: FontWeight.bold)),
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black)),
+                      backgroundColor: AppColors.tilePlayed,
                       tooltip: 'Nowa lista',
                       onPressed: _startNewPlaylist,
                     ),
