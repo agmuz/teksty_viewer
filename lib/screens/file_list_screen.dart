@@ -1214,9 +1214,13 @@ class _FileListScreenState extends State<FileListScreen>
                                   // Wysokość pasków (topBar 96 + bankBar 96
                                   // w widoku banku; w widoku playlisty tylko
                                   // topBar 96).
+                                  // Paski: topBar (96) + bankBar (96)
+                                  // + margines (8) = 200. Gdy search
+                                  // otwarty — bankBar wyższy o ~60 px
+                                  // (TextField) = 260.
                                   final barsHeight = _activePlaylistId == null
-                                      ? (_searchOpen ? 270.0 : 200.0)
-                                      : (_searchOpen ? 170.0 : 96.0);
+                                      ? (_searchOpen ? 260.0 : 200.0)
+                                      : (_searchOpen ? 160.0 : 96.0);
                                   return GridView.builder(
                                     padding: EdgeInsets.only(
                                       left: 4,
