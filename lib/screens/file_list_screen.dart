@@ -79,9 +79,9 @@ class _FileListScreenState extends State<FileListScreen>
   @override
     @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _defaultAppDir().then((dir) => _scanFolder(dir));
-    }
+    // NIE skanuj przy resume — to resetuje _filteredFiles i psuje filtr
+    // z lupki (np. po powrocie z PDF).
+    // Skanowanie tylko przy zmianie banku (_switchBank) i starcie (_init).
   }
 
   String get _currentPlayedKey => _activePlaylistId ?? _playedAllKey;
