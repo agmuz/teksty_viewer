@@ -8,6 +8,7 @@ z **banków na Dysku Google**.
 - **Banki** — wiele folderów z Dysku Google (import przez SAF)
 - **Playlisty** — własne zestawy na koncert (drag & drop, edycja)
 - **Przeglądarka PDF** — pdfrx, swipe, **pedał BT** (strzałki / PageUp / PageDown)
+- **Generator PDF** — łączy playlistę w jeden PDF, **pierwsza strona = spis utworów** (numer + tytuł + **tonacja** z pierwszej strony każdego utworu), polskie znaki (Roboto TTF)
 - **Zapis zoomu** — długie przytrzymanie (per plik)
 - **Auto-hide pasków** — scroll w górę = paski chowają się
 - **Fullscreen** (immersiveSticky)

@@ -300,11 +300,8 @@ class _FileListScreenState extends State<FileListScreen>
       if (!isSupported) continue;
 
       final localFile = File('${localDir.path}/${f.name}');
-      if (await localFile.exists()) {
-        skipped++;
-        continue;
-      }
-
+      // Zawsze kopiuj od nowa (nadpisz) — SAF nie daje daty modyfikacji.
+      // Dzięki temu edytowane pliki w źródle są aktualizowane.
       try {
         final bytes = await _saf.readFileBytes(f.uri);
         await localFile.writeAsBytes(bytes);
